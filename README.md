@@ -8,4 +8,4 @@ This is in development. There may be some bugs or things that aren't fully setup
 - Online play (still with fake money)
 - More games
 
-# made by payson and 0 chatgpt was used :)
+# made by payson and 0 chatgpt was used trust

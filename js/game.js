@@ -47,9 +47,8 @@ class BlackjackGame {
             resplitAces: false,
             surrenderAllowed: true,
             insuranceAllowed: true,
-            autoWinOn21: true,  // Auto-win when player hits exactly 21
-            minBet: 0,
-            maxBet: 9999999999
+            minBet: 10,
+            maxBet: 999000000000
         };
 
         // Statistics
@@ -92,8 +91,8 @@ class BlackjackGame {
             return false;
         }
 
-        if (amount < 1 || amount > this.settings.maxBet) {
-            console.warn(`Bet must be at least $1`);
+        if (amount < this.settings.minBet || amount > this.settings.maxBet) {
+            console.warn(`Bet must be between ${this.settings.minBet} and ${this.settings.maxBet}`);
             return false;
         }
 
@@ -188,8 +187,8 @@ class BlackjackGame {
 
         if (this.currentHand.isBusted) {
             await this.handleHandComplete();
-        } else if (this.settings.autoWinOn21 && this.currentHand.getValue() === 21) {
-            // Auto-win on 21: automatically stand and proceed
+        } else if (this.currentHand.getValue() === 21) {
+            // Auto-stand on 21 for faster, more rewarding gameplay
             this.currentHand.isStood = true;
             await this.handleHandComplete();
         }
@@ -621,23 +620,82 @@ class BlackjackGame {
         console.log('🔄 Deck reshuffled');
     }
 
-    // Stats persistence
-    saveStats() {
+    // ===========================================
+    // Data Persistence with 1-Week Expiration
+    // ===========================================
+
+    // Expiration time: 1 week in milliseconds
+    static EXPIRATION_MS = 7 * 24 * 60 * 60 * 1000;
+
+    /**
+     * Save data to localStorage with a timestamp
+     * @param {string} key - Storage key
+     * @param {any} data - Data to store
+     */
+    saveWithTimestamp(key, data) {
         try {
-            localStorage.setItem('blackjack_stats', JSON.stringify(this.stats));
+            const wrapper = {
+                timestamp: Date.now(),
+                data: data
+            };
+            localStorage.setItem(key, JSON.stringify(wrapper));
         } catch (e) {
-            console.warn('Could not save stats:', e);
+            console.warn(`Could not save ${key}:`, e);
         }
     }
 
-    loadStats() {
+    /**
+     * Load data from localStorage with expiration check
+     * @param {string} key - Storage key
+     * @returns {any|null} - Stored data or null if expired/missing
+     */
+    loadWithExpiration(key) {
         try {
-            const saved = localStorage.getItem('blackjack_stats');
+            const saved = localStorage.getItem(key);
+            if (!saved) return null;
+
+            const wrapper = JSON.parse(saved);
+
+            // Check if data has expired (older than 1 week)
+            if (!wrapper.timestamp || Date.now() - wrapper.timestamp > BlackjackGame.EXPIRATION_MS) {
+                console.log(`${key} has expired, clearing stored data`);
+                localStorage.removeItem(key);
+                return null;
+            }
+
+            return wrapper.data;
+        } catch (e) {
+            console.warn(`Could not load ${key}:`, e);
+            return null;
+        }
+    }
+
+    /**
+     * Refresh the timestamp on stored data (extends expiration)
+     * @param {string} key - Storage key
+     */
+    refreshTimestamp(key) {
+        try {
+            const saved = localStorage.getItem(key);
             if (saved) {
-                this.stats = { ...this.stats, ...JSON.parse(saved) };
+                const wrapper = JSON.parse(saved);
+                wrapper.timestamp = Date.now();
+                localStorage.setItem(key, JSON.stringify(wrapper));
             }
         } catch (e) {
-            console.warn('Could not load stats:', e);
+            console.warn(`Could not refresh timestamp for ${key}:`, e);
+        }
+    }
+
+    // Stats persistence
+    saveStats() {
+        this.saveWithTimestamp('blackjack_stats', this.stats);
+    }
+
+    loadStats() {
+        const saved = this.loadWithExpiration('blackjack_stats');
+        if (saved) {
+            this.stats = { ...this.stats, ...saved };
         }
     }
 
@@ -665,48 +723,35 @@ class BlackjackGame {
         this.loadBalance();
         this.loadSettings();
         this.loadStats();
+        // Refresh all timestamps on load to extend expiration
+        this.refreshTimestamp('blackjack_balance');
+        this.refreshTimestamp('blackjack_settings');
+        this.refreshTimestamp('blackjack_stats');
     }
 
     saveBalance() {
-        try {
-            localStorage.setItem('blackjack_balance', JSON.stringify(this.balance));
-        } catch (e) {
-            console.warn('Could not save balance:', e);
-        }
+        this.saveWithTimestamp('blackjack_balance', this.balance);
     }
 
     loadBalance() {
-        try {
-            const saved = localStorage.getItem('blackjack_balance');
-            if (saved) {
-                this.balance = JSON.parse(saved);
-            }
-        } catch (e) {
-            console.warn('Could not load balance:', e);
+        const saved = this.loadWithExpiration('blackjack_balance');
+        if (saved !== null) {
+            this.balance = saved;
         }
     }
 
     saveSettings() {
-        try {
-            localStorage.setItem('blackjack_settings', JSON.stringify(this.settings));
-        } catch (e) {
-            console.warn('Could not save settings:', e);
-        }
+        this.saveWithTimestamp('blackjack_settings', this.settings);
     }
 
     loadSettings() {
-        try {
-            const saved = localStorage.getItem('blackjack_settings');
-            if (saved) {
-                const loadedSettings = JSON.parse(saved);
-                this.settings = { ...this.settings, ...loadedSettings };
-                // Apply deck count
-                if (loadedSettings.deckCount) {
-                    this.deck.setDeckCount(loadedSettings.deckCount);
-                }
+        const saved = this.loadWithExpiration('blackjack_settings');
+        if (saved) {
+            this.settings = { ...this.settings, ...saved };
+            // Apply deck count
+            if (saved.deckCount) {
+                this.deck.setDeckCount(saved.deckCount);
             }
-        } catch (e) {
-            console.warn('Could not load settings:', e);
         }
     }
 }
